@@ -1,69 +1,52 @@
 import pandas as pd
-import numpy as np
-import unicodedata 
-from pathlib import Path
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# usar la carpeta del script para construir rutas absolutas
-base_dir = Path(__file__).resolve().parent
-file_name = base_dir / 'dataset_comunidades_senasoft.csv'
-output_file_name = base_dir / 'normalized_data_comunidades_senasoft.csv'
+# --- CONFIGURACIÓN DE ARCHIVOS ---
+INPUT_FILE = "Analisis Inicial/dataset_comunidades_senasoft.csv"
+OUTPUT_FILE_TRANSFORMADO = "normalized_data_comunidades_senasoft.csv"
+
+print(f"Iniciando proceso ETL y generación de gráficas con el archivo: {INPUT_FILE}")
+
+# ====================================
+# PASO 1: EXTRACCIÓN Y TRANSFORMACIÓN (ETL)
+# ====================================
 
 try:
-    df = pd.read_csv(file_name)
+    # 1. Extracción (E)
+    df = pd.read_csv(INPUT_FILE)
 except FileNotFoundError:
-    print(f"Error: El archivo '{file_name}' no fue encontrado.")
-    print("Directorio de trabajo actual:", Path.cwd())
-    # listar algunos archivos del directorio del script para depurar
-    print("Archivos en el directorio del script:", [p.name for p in base_dir.iterdir()][:50])
-    raise
+    print(f"ERROR: No se encontró el archivo '{INPUT_FILE}'. Asegúrate de que esté en la misma carpeta.")
+    exit()
 
-# --- NUEVA FUNCIÓN PARA NORMALIZAR VALORES DE TEXTO (manejo de tildes) ---
-def normalize_text_value(text):
-    """
-    Elimina tildes y otros acentos, convierte el texto a minúsculas y elimina espacios 
-    extras para asegurar consistencia en los valores categóricos (ej. 'Medellín' -> 'medellin').
-    """
-    if pd.isna(text):
-        return text 
-    
-    text = str(text).strip()
-    
-    # Normalización NFKD y eliminación de acentos mediante codificación/decodificación a ascii
-    normalized = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8')
-    
-    return normalized.lower()
+# 2. Transformación (T)
+# 2.1 Estandarización de nombres de columnas a snake_case (minúsculas y guiones bajos)
+df.columns = [
+    'id', 'nombre', 'edad', 'genero', 'ciudad', 'comentario',
+    'categoria_del_problema', 'nivel_de_urgencia', 'fecha_del_reporte',
+    'acceso_a_internet', 'atencion_previa_del_gobierno', 'zona_rural'
+]
 
-# --- 2. TRANSFORMACIÓN (T: Transform) - NORMALIZACIÓN Y LIMPIEZA ---
+# 2.2 Cálculo de valores para imputación
+median_age = df['edad'].median()
+mode_gender = df['genero'].mode()[0]
+mode_city = df['ciudad'].mode()[0]
 
-# 2.1 Estandarización de Nombres de Columnas
-def standardize_column_names(df):
-    """Convierte los nombres de las columnas a snake_case."""
-    new_columns = []
-    for col in df.columns:
-        new_col = col.lower().replace(' ', '_').replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u')
-        new_columns.append(new_col)
-    df.columns = new_columns
-    return df
-
-df = standardize_column_names(df)
-
-# 2.2 Conversión de Tipos de Datos (Dtypes)
-df['fecha_del_reporte'] = pd.to_datetime(df['fecha_del_reporte'], errors='coerce')
-
-# 2.3 Manejo de Valores Faltantes (NaN) - Imputación
-median_edad = df['edad'].median()
-df['edad'] = df['edad'].fillna(median_edad).astype(int)
-df['genero'] = df['genero'].fillna('Desconocido')
-df['ciudad'] = df['ciudad'].fillna('Desconocido')
+# 2.3 Imputación de Valores Faltantes
 df['comentario'] = df['comentario'].fillna('Sin Comentario')
+df['edad'] = df['edad'].fillna(median_age).astype(int)
+df['genero'] = df['genero'].fillna(mode_gender)
+df['ciudad'] = df['ciudad'].fillna(mode_city)
 
-# 2.4 Estandarización de Texto para Categorías y Texto Libre
-# ¡CORRECCIÓN! Se incluye 'comentario' para asegurar que el texto libre tampoco tenga tildes.
-text_cols = ['nombre', 'genero', 'ciudad', 'categoria_del_problema', 'nivel_de_urgencia', 'comentario']
-for col in text_cols:
-    df[col] = df[col].apply(normalize_text_value)
-# 2.5 Eliminación de duplicados
-df.drop_duplicates(inplace=True)
+# 2.4 Conversión de Tipos de Datos y Feature Engineering
+df['fecha_del_reporte'] = pd.to_datetime(df['fecha_del_reporte'], format='%Y-%m-%d')
+df['año_del_reporte'] = df['fecha_del_reporte'].dt.year
+df['mes_del_reporte'] = df['fecha_del_reporte'].dt.month
 
-# --- 3. CARGA (L: Load) ---
-df.to_csv(output_file_name, index=False)
+# 2.5 Eliminar columna de fecha original
+df = df.drop(columns=['fecha_del_reporte'])
+
+# 3. Carga (L)
+df.to_csv(OUTPUT_FILE_TRANSFORMADO, index=False)
+print(f"\n[ÉXITO ETL] DataFrame limpio y transformado guardado en: {OUTPUT_FILE_TRANSFORMADO}")
+
